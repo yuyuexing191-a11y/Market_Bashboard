@@ -1,6 +1,7 @@
 import csv
 import json
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 import sys
 
@@ -253,3 +254,55 @@ def test_main_text_reports_counts_aggregates_and_complete_date(tmp_path, capsys)
     assert "分钟记录数" in captured.out
     assert "缺失代码（日线）：无" in captured.out
     assert "缺失代码（分钟）：无" in captured.out
+
+
+def test_main_json_reports_decimal_metrics_as_numbers(tmp_path, capsys):
+    pool_path = write_stock_pool(tmp_path / "stock_pool.csv", stock_rows())
+    write_stock_list(tmp_path, [{"symbol": symbol, "list_status": "L"} for symbol in SYMBOLS])
+    trading_date = date(2026, 1, 2)
+    write_parquet(
+        tmp_path / DAILY_DATASET / f"date={trading_date}" / "part.parquet",
+        [
+            {"symbol": symbol, "volume": Decimal("1000.25"),
+             "amount": Decimal("123.45") if index else None}
+            for index, symbol in enumerate(SYMBOLS)
+        ],
+        [("symbol", "VARCHAR"), ("volume", "DECIMAL(18,2)"), ("amount", "DECIMAL(18,2)")],
+    )
+    write_minute_partition(tmp_path, trading_date, SYMBOLS)
+
+    status = main([
+        "--data-root", str(tmp_path), "--stock-pool", str(pool_path), "--format", "json",
+    ])
+
+    captured = capsys.readouterr()
+    report = json.loads(captured.out)
+    assert status == 0
+    assert captured.err == ""
+    assert report["daily_volume"] == dict.fromkeys(SYMBOLS, 1000.25)
+    assert report["daily_amount"][SYMBOLS[0]] is None
+    assert report["daily_amount"][SYMBOLS[1]] == 123.45
+    assert isinstance(report["daily_amount"][SYMBOLS[1]], float)
+
+
+def test_main_reports_missing_field_in_later_parquet_file(tmp_path, capsys):
+    pool_path = write_stock_pool(tmp_path / "stock_pool.csv", stock_rows())
+    write_stock_list(tmp_path, [{"symbol": symbol, "list_status": "L"} for symbol in SYMBOLS])
+    trading_date = date(2026, 1, 2)
+    write_daily_partition(tmp_path, trading_date, SYMBOLS)
+    missing_field_file = write_parquet(
+        tmp_path / DAILY_DATASET / f"date={trading_date}" / "second.parquet",
+        [{"symbol": SYMBOLS[0], "volume": 10}],
+        [("symbol", "VARCHAR"), ("volume", "BIGINT")],
+    )
+    write_minute_partition(tmp_path, trading_date, SYMBOLS)
+
+    status = main(["--data-root", str(tmp_path), "--stock-pool", str(pool_path)])
+
+    captured = capsys.readouterr()
+    assert status != 0
+    assert captured.out == ""
+    assert DAILY_DATASET in captured.err
+    assert trading_date.isoformat() in captured.err
+    assert str(missing_field_file) in captured.err
+    assert "缺少字段: amount" in captured.err

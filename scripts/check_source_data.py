@@ -7,6 +7,7 @@ import json
 import sys
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Sequence
 
@@ -85,12 +86,13 @@ def _parquet_files(data_root: Path, dataset: str, trading_date: date | None = No
 
 def _require_columns(files: list[str], dataset: str, required: set[str], trading_date: date | None = None) -> None:
     with duckdb.connect() as connection:
-        description = connection.execute("DESCRIBE SELECT * FROM read_parquet(?)", [files]).fetchall()
-    available = {row[0] for row in description}
-    missing = sorted(required - available)
-    if missing:
-        date_label = f" 日期 {trading_date.isoformat()}" if trading_date else ""
-        raise ValueError(f"数据集 {dataset}{date_label} 缺少字段: {', '.join(missing)}")
+        for file in files:
+            description = connection.execute("DESCRIBE SELECT * FROM read_parquet(?)", [file]).fetchall()
+            available = {row[0] for row in description}
+            missing = sorted(required - available)
+            if missing:
+                date_label = f" 日期 {trading_date.isoformat()}" if trading_date else ""
+                raise ValueError(f"数据集 {dataset}{date_label} 文件 {file} 缺少字段: {', '.join(missing)}")
 
 
 def _target_query(files: list[str], symbols: list[str], sql: str):
@@ -159,7 +161,7 @@ def validate_stock_list(data_root: Path, symbols: list[str]) -> set[str]:
     return set(status_by_symbol)
 
 
-def _daily_metrics(data_root: Path, trading_date: date, symbols: list[str]) -> dict[str, tuple[int | None, float | None]]:
+def _daily_metrics(data_root: Path, trading_date: date, symbols: list[str]) -> dict[str, tuple[int | float | Decimal | None, int | float | Decimal | None]]:
     files = _parquet_files(data_root, DAILY_DATASET, trading_date)
     _require_columns(files, DAILY_DATASET, {"symbol", "volume", "amount"}, trading_date)
     rows = _target_query(
@@ -187,13 +189,18 @@ def _minute_counts(data_root: Path, trading_date: date, symbols: list[str]) -> d
     return {symbol: count for symbol, count in rows}
 
 
+def _report_number(value: int | float | Decimal | None) -> int | float | None:
+    """Use JSON numbers for reports, converting Decimal to display floats."""
+    return float(value) if isinstance(value, Decimal) else value
+
+
 def _make_report(
     symbols: list[str],
     listed_symbols: set[str],
     trading_date: date,
     daily_symbols: set[str],
     minute_symbols: set[str],
-    daily_metrics: dict[str, tuple[int | None, float | None]],
+    daily_metrics: dict[str, tuple[int | float | Decimal | None, int | float | Decimal | None]],
     minute_counts: dict[str, int],
 ) -> dict:
     return {
@@ -202,8 +209,8 @@ def _make_report(
         "date": trading_date.isoformat(),
         "daily_symbol_count": len(daily_symbols),
         "minute_symbol_count": len(minute_symbols),
-        "daily_volume": {symbol: daily_metrics.get(symbol, (None, None))[0] for symbol in symbols},
-        "daily_amount": {symbol: daily_metrics.get(symbol, (None, None))[1] for symbol in symbols},
+        "daily_volume": {symbol: _report_number(daily_metrics.get(symbol, (None, None))[0]) for symbol in symbols},
+        "daily_amount": {symbol: _report_number(daily_metrics.get(symbol, (None, None))[1]) for symbol in symbols},
         "minute_records": {symbol: minute_counts.get(symbol, 0) for symbol in symbols},
         "missing_daily": sorted(set(symbols) - daily_symbols),
         "missing_minute": sorted(set(symbols) - minute_symbols),
