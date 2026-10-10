@@ -15,6 +15,7 @@ import duckdb
 
 
 STOCK_POOL_COLUMNS = {"symbol", "name", "sector", "source_industry", "exchange", "list_status"}
+STOCK_POOL_SECTORS = {"金融", "消费", "制造", "医药", "科技"}
 DAILY_DATASET = "stock_daily_kbar"
 MINUTE_DATASET = "stock_1min_kbar"
 STOCK_LIST_DATASET = "stock_list"
@@ -30,14 +31,24 @@ def load_stock_pool(path: Path) -> list[str]:
             missing_columns = sorted(STOCK_POOL_COLUMNS - columns)
             if missing_columns:
                 raise ValueError(f"股票池 {path} 缺少列: {', '.join(missing_columns)}")
-            rows = list(reader)
+            rows = []
+            for row in reader:
+                for field in reader.fieldnames:
+                    if field in STOCK_POOL_COLUMNS and row[field] is None:
+                        raise ValueError(f"股票池 {path} 第 {reader.line_num} 行字段 {field} 缺失")
+                for field in ("symbol", "sector"):
+                    row[field] = row[field].strip()
+                    if not row[field]:
+                        raise ValueError(f"股票池 {path} 第 {reader.line_num} 行字段 {field} 不能为空")
+                if row["sector"] not in STOCK_POOL_SECTORS:
+                    raise ValueError(
+                        f"股票池 {path} 第 {reader.line_num} 行字段 sector 行业名称非法: {row['sector']}"
+                    )
+                rows.append(row)
     except OSError as exc:
         raise ValueError(f"无法读取股票池文件 {path}: {exc}") from exc
 
-    symbols = [row["symbol"].strip() for row in rows]
-    empty_rows = [str(index + 2) for index, symbol in enumerate(symbols) if not symbol]
-    if empty_rows:
-        raise ValueError(f"股票池 {path} 存在空代码，行号: {', '.join(empty_rows)}")
+    symbols = [row["symbol"] for row in rows]
 
     duplicates = sorted(symbol for symbol, count in Counter(symbols).items() if count > 1)
     if duplicates:
@@ -45,7 +56,7 @@ def load_stock_pool(path: Path) -> list[str]:
     if len(symbols) != 20:
         raise ValueError(f"股票池数量必须为 20，实际为 {len(symbols)}")
 
-    sector_counts = Counter(row["sector"].strip() for row in rows)
+    sector_counts = Counter(row["sector"] for row in rows)
     invalid_sectors = sorted(sector for sector, count in sector_counts.items() if count != 4)
     if len(sector_counts) != 5 or invalid_sectors:
         details = ", ".join(f"{sector or '(空)'}={sector_counts[sector]}" for sector in sorted(sector_counts))

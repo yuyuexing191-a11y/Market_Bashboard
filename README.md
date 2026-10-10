@@ -45,14 +45,18 @@ fi
 等待数据库健康后再连接：
 
 ```bash
-docker compose config --quiet
-docker compose up -d --wait --wait-timeout 90
-docker compose ps
-docker compose exec -T postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT current_database(), current_user;"'
+if docker compose config --quiet &&
+  docker compose up -d --wait --wait-timeout 90 &&
+  docker compose ps &&
+  docker compose exec -T postgres sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' &&
+  docker compose exec -T postgres sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT current_database(), current_user;"'; then
+  printf '数据库启动与连接检查成功。\n'
+else
+  printf '数据库启动或检查失败；请按下文“停止与恢复”先执行 docker compose down，成功释放端口后再恢复原容器。\n' >&2
+fi
 ```
 
-以上命令使用容器中的实际配置。若保留默认 `.env`，健康检查也可以写为：
+以上命令使用容器中的实际配置。仅在启动与连接检查成功后继续执行以下可选连接命令。若保留默认 `.env`，健康检查也可以写为：
 
 ```bash
 docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard
@@ -104,7 +108,7 @@ docker compose down
 
 ```bash
 if [ "${original_postgres_stopped:-false}" = true ]; then
-  docker start stock-market-postgres
+  docker start stock-market-postgres &&
   docker inspect -f 'running={{.State.Running}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' stock-market-postgres
 fi
 ```

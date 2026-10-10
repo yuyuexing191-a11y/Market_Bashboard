@@ -232,16 +232,16 @@ docker stop stock-market-postgres
 - [x] **步骤 2：启动本仓库数据库。**
 
 ```bash
-docker compose up -d --wait --wait-timeout 90
+docker compose up -d --wait --wait-timeout 90 &&
 docker compose ps
 ```
 
-预期：`postgres` 状态为 `running (healthy)`，宿主机映射为 `0.0.0.0:5432->5432/tcp`。
+预期：`postgres` 状态为 `running (healthy)`，宿主机映射为 `0.0.0.0:5432->5432/tcp`。失败时停止后续检查，按步骤 5 先成功执行 `down`、释放端口后再恢复原容器。
 
 - [x] **步骤 3：从容器内检查健康和客户端连接。**
 
 ```bash
-docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard
+docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard &&
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
   -U market_dashboard -d market_dashboard \
   -c 'SELECT current_database(), current_user;'
@@ -261,17 +261,17 @@ docker run --rm --network host --env-file .env postgres:16-alpine \
 ```bash
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
   -U market_dashboard -d market_dashboard \
-  -c "CREATE TABLE IF NOT EXISTS issue02_persistence_check (id integer PRIMARY KEY, marker text NOT NULL); TRUNCATE issue02_persistence_check; INSERT INTO issue02_persistence_check VALUES (1, 'survives-restart');"
-docker compose restart postgres
-docker compose up -d --wait --wait-timeout 90
+  -c "CREATE TABLE IF NOT EXISTS issue02_persistence_check (id integer PRIMARY KEY, marker text NOT NULL); TRUNCATE issue02_persistence_check; INSERT INTO issue02_persistence_check VALUES (1, 'survives-restart');" &&
+docker compose restart postgres &&
+docker compose up -d --wait --wait-timeout 90 &&
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
   -U market_dashboard -d market_dashboard \
-  -c "SELECT marker FROM issue02_persistence_check WHERE id = 1;"
-docker compose down
-docker compose up -d --wait --wait-timeout 90
+  -c "SELECT marker FROM issue02_persistence_check WHERE id = 1;" &&
+docker compose down &&
+docker compose up -d --wait --wait-timeout 90 &&
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
   -U market_dashboard -d market_dashboard \
-  -c "SELECT marker FROM issue02_persistence_check WHERE id = 1;"
+  -c "SELECT marker FROM issue02_persistence_check WHERE id = 1;" &&
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
   -U market_dashboard -d market_dashboard \
   -c 'DROP TABLE issue02_persistence_check;'
@@ -285,7 +285,7 @@ docker compose exec -T postgres psql -v ON_ERROR_STOP=1 \
 docker compose down
 ```
 
-如果步骤 1 记录为 `true`，执行：
+仅在 `down` 成功且步骤 1 记录为 `true` 时，执行：
 
 ```bash
 docker start stock-market-postgres
@@ -309,9 +309,19 @@ git commit -m "test: verify postgres health and persistence"
 
 ```bash
 cp .env.example .env
-docker compose up -d --wait --wait-timeout 90
-docker compose ps
-docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard
+if docker compose config --quiet &&
+  docker compose up -d --wait --wait-timeout 90 &&
+  docker compose ps &&
+  docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard; then
+  printf '数据库启动与健康检查成功。\n'
+else
+  printf '数据库启动或检查失败；请按任务 4 步骤 5 先成功执行 docker compose down，再恢复原容器。\n' >&2
+fi
+```
+
+源数据检查可独立执行：
+
+```bash
 uv run --with duckdb python scripts/check_source_data.py \
   --data-root /mnt/glusterfs/quantdata/tushare \
   --stock-pool config/stock_pool.csv
@@ -392,7 +402,7 @@ git push -u origin feat/data_environment
 ## 当前执行结果
 
 - 实现分支：`feat/data_environment`，保留并纳入用户已有股票池、学习笔记和课程规划。
-- 源数据校验：17 项临时 Parquet 行为测试通过；文本和 JSON 均退出 0；2026-10-09 覆盖 20 只上市股票，各有 241 条分钟记录。记录覆盖不代表分钟无缺口。
+- 源数据校验：24 项股票池输入与临时 Parquet 行为测试通过；文本和 JSON 均退出 0；2026-10-09 覆盖 20 只上市股票，各有 241 条分钟记录。记录覆盖不代表分钟无缺口。
 - Compose 环境：配置校验、healthy、容器内及宿主机 TCP 连接通过；重启与保留卷的容器重建后标记均保留，测试表删除。
 - 环境恢复：本项目容器已移除，命名卷保留；原 `stock-market-postgres` 恢复 running/healthy。
 - 文档：README 与学习笔记已补齐，证据保存在 `evidence/`。

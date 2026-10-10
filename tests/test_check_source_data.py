@@ -125,6 +125,63 @@ def test_load_stock_pool_requires_expected_columns(tmp_path):
         load_stock_pool(path)
 
 
+@pytest.mark.parametrize("field", ["symbol", "sector"])
+def test_load_stock_pool_rejects_empty_required_values(tmp_path, field):
+    rows = stock_rows()
+    rows[4][field] = "   "
+    path = write_stock_pool(tmp_path / "stock_pool.csv", rows)
+
+    with pytest.raises(ValueError) as error:
+        load_stock_pool(path)
+
+    assert f"{path} 第 6 行字段 {field}" in str(error.value)
+
+
+def test_load_stock_pool_rejects_empty_sector_group(tmp_path):
+    rows = stock_rows()
+    for row in rows[:4]:
+        row["sector"] = ""
+    path = write_stock_pool(tmp_path / "stock_pool.csv", rows)
+
+    with pytest.raises(ValueError) as error:
+        load_stock_pool(path)
+
+    assert f"{path} 第 2 行字段 sector" in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("fields", "kept_columns", "missing_field"),
+    [(FIELDS, 1, "name"), (FIELDS, 2, "sector"),
+     (FIELDS[1:] + FIELDS[:1], 5, "symbol")],
+)
+def test_load_stock_pool_rejects_truncated_csv_rows(tmp_path, fields, kept_columns, missing_field):
+    path = tmp_path / "stock_pool.csv"
+    with path.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(fields)
+        for index, row in enumerate(stock_rows()):
+            values = [row[field] for field in fields]
+            writer.writerow(values[:kept_columns] if index == 4 else values)
+
+    with pytest.raises(ValueError) as error:
+        load_stock_pool(path)
+
+    assert f"{path} 第 6 行字段 {missing_field}" in str(error.value)
+
+
+def test_load_stock_pool_rejects_unknown_sector_group(tmp_path):
+    rows = stock_rows()
+    for row in rows[:4]:
+        row["sector"] = "其他"
+    path = write_stock_pool(tmp_path / "stock_pool.csv", rows)
+
+    with pytest.raises(ValueError) as error:
+        load_stock_pool(path)
+
+    assert f"{path} 第 2 行字段 sector" in str(error.value)
+    assert "其他" in str(error.value)
+
+
 def test_list_source_partitions_returns_dates_descending_and_ignores_invalid(tmp_path):
     for name in ("date=2026-01-03", "date=2026-01-01", "date=not-a-date", "other"):
         (tmp_path / "daily" / name).mkdir(parents=True)
