@@ -4,11 +4,11 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-market_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-market_dashboard}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-market_dashboard_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stock_dev_password}
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
-      - market_dashboard_postgres_data:/var/lib/postgresql/data
+      - stock_dashboard_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
@@ -16,5 +16,5 @@ services:
       retries: 10
 
 volumes:
-  market_dashboard_postgres_data:
-    name: market_dashboard_postgres_data
+  stock_dashboard_postgres_data:
+    name: stock_dashboard_postgres_data
