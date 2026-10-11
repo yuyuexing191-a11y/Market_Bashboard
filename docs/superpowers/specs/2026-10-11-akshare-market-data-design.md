@@ -72,7 +72,7 @@ AkShare 字段名、代码转换、成交量单位和数值精度在实现时以
 - 使用 Alembic 版本迁移创建表、键、约束和索引。
 - 迁移由开发者显式运行 `uv run alembic upgrade head`。
 - 应用和导入命令不调用 `Base.metadata.create_all()`，也不执行 DDL。
-- 数据库连接统一从 `DATABASE_URL` 环境变量读取；凭据不写入源码或迁移文件。
+- 迁移与导入共用 `app/db.py` 的配置读取：自动读取项目根目录 `.env`，终端环境变量优先；优先使用 `DATABASE_URL`，未设置时从完整的 `POSTGRES_*` 配置生成本地连接串。凭据不写入源码或迁移文件。
 - 使用 `pyproject.toml` 和 `uv` 管理依赖。
 
 ## 导入命令与事务
@@ -93,7 +93,7 @@ AkShare 字段名、代码转换、成交量单位和数值精度在实现时以
 
 ## 代码边界
 
-- `app/db.py`: 从环境变量读取 `DATABASE_URL`，创建 SQLAlchemy engine。
+- `app/db.py`: 统一读取环境变量和项目 `.env` 的数据库配置，创建 SQLAlchemy engine。
 - `app/import_service.py`: 校验股票池、协调行情获取与规范化、选择共同分钟日期，并管理写入事务和导入报告。
 - `app/models.py`: 声明式模型、约束和索引定义。
 - `app/data_provider.py`: AkShare 网络请求及有限重试。

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -43,12 +42,14 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("--start-date 不能晚于 --end-date")
     if args.command == "minute" and args.lookback_days <= 0:
         raise SystemExit("--lookback-days 必须大于 0")
-    if not os.getenv("DATABASE_URL"):
-        raise SystemExit("请先设置 DATABASE_URL")
+    try:
+        engine = create_database_engine()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
     pool = load_stock_pool(args.pool)
     provider = AkShareProvider()
-    session_factory = sessionmaker(create_database_engine())
+    session_factory = sessionmaker(engine)
 
     if args.command == "daily":
         report = run_daily_import(

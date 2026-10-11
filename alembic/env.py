@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import os
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.models import Base
-
+from app.db import database_url
 
 config = context.config
 if config.config_file_name is not None:
@@ -16,16 +15,9 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-def _database_url() -> str:
-    value = os.getenv("DATABASE_URL")
-    if not value:
-        raise RuntimeError("未设置 DATABASE_URL")
-    return value
-
-
 def run_migrations_offline() -> None:
     context.configure(
-        url=_database_url(),
+        url=database_url(),
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -36,7 +28,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = _database_url()
+    configuration["sqlalchemy.url"] = database_url().replace("%", "%%")
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
