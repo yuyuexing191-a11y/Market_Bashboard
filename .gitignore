@@ -6,3 +6,4 @@ __pycache__/
 *.py[cod]
 compose.override.yaml
 .superpowers/
+rust/target/
