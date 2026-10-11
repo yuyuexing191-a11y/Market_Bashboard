@@ -1,0 +1,249 @@
+PostgreSQL 本地环境实际验证
+日期（Asia/Shanghai）：2026-10-10 20:58:53 CST
+分支：feat/data_environment
+范围：健康、容器内连接、宿主机 TCP 密码认证、重启和命名卷重建持久化。
+不创建业务表、不导入数据、不删除 volume、不记录密码。
+
+
+检查：Docker 版本
+命令：docker version --format Docker\ client\ \{\{.Client.Version\}\}\;\ server\ \{\{.Server.Version\}\}
+Docker client 29.6.0; server 29.6.0
+退出码：0
+
+检查：Compose 版本
+命令：docker compose version
+Docker Compose version v5.1.4
+退出码：0
+
+检查：Compose 配置静默校验（不输出展开环境）
+命令：docker compose config --quiet
+退出码：0
+
+检查：保存原容器 ID
+命令：docker inspect -f \{\{.Id\}\} stock-market-postgres
+5f60266222837e797fce4731275ac29e0232a81cb158b5d1f3016751c14ee62a
+退出码：0
+
+检查：保存原容器停止前状态
+命令：docker inspect -f running=\{\{.State.Running\}\}\ status=\{\{.State.Status\}\}\ health=\{\{if\ .State.Health\}\}\{\{.State.Health.Status\}\}\{\{else\}\}none\{\{end\}\} stock-market-postgres
+running=true status=running health=healthy
+退出码：0
+
+检查：保存原容器运行布尔值
+命令：docker inspect -f \{\{.State.Running\}\} stock-market-postgres
+true
+退出码：0
+
+检查：临时停止原容器（用户已授权）
+命令：docker stop stock-market-postgres
+stock-market-postgres
+退出码：0
+
+检查：启动本项目并等待 healthy
+命令：docker compose up -d --wait --wait-timeout 90
+ Network market_bashboard_default Creating
+ Network market_bashboard_default Created
+ Volume market_dashboard_postgres_data Creating
+ Volume market_dashboard_postgres_data Created
+ Container market_bashboard-postgres-1 Creating
+ Container market_bashboard-postgres-1 Created
+ Container market_bashboard-postgres-1 Starting
+ Container market_bashboard-postgres-1 Started
+ Container market_bashboard-postgres-1 Waiting
+ Container market_bashboard-postgres-1 Healthy
+退出码：0
+
+检查：本项目状态及宿主机端口映射
+命令：docker compose ps
+NAME                          IMAGE                COMMAND                  SERVICE    CREATED         STATUS                   PORTS
+market_bashboard-postgres-1   postgres:16-alpine   "docker-entrypoint.s…"   postgres   6 seconds ago   Up 5 seconds (healthy)   0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp
+退出码：0
+
+检查：宿主机 TCP 端口映射
+命令：docker compose port postgres 5432
+0.0.0.0:5432
+退出码：0
+断言：默认端口 5432；实际=0.0.0.0:5432；预期=0.0.0.0:5432；退出码：0
+
+检查：取得首次容器 ID
+命令：docker compose ps -q postgres
+eb0752a006162f6c878ba88e11db4e10d5bb6a74d282667b40f9707e25485cd8
+退出码：0
+
+检查：本项目容器健康状态
+命令：docker inspect -f \{\{.State.Health.Status\}\} eb0752a006162f6c878ba88e11db4e10d5bb6a74d282667b40f9707e25485cd8
+healthy
+退出码：0
+断言：首次启动 healthy；实际=healthy；预期=healthy；退出码：0
+
+检查：镜像与实际命名卷
+命令：docker inspect -f image=\{\{.Config.Image\}\}\ \{\{range\ .Mounts\}\}type=\{\{.Type\}\}\ name=\{\{.Name\}\}\ destination=\{\{.Destination\}\}\{\{end\}\} eb0752a006162f6c878ba88e11db4e10d5bb6a74d282667b40f9707e25485cd8
+image=postgres:16-alpine type=volume name=market_dashboard_postgres_data destination=/var/lib/postgresql/data
+退出码：0
+
+检查：容器内 pg_isready
+命令：docker compose exec -T postgres pg_isready -U market_dashboard -d market_dashboard
+/var/run/postgresql:5432 - accepting connections
+退出码：0
+
+检查：容器内 SQL 连接
+命令：docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c SELECT\ current_database\(\)\,\ current_user\;
+ current_database |   current_user
+------------------+------------------
+ market_dashboard | market_dashboard
+(1 row)
+
+退出码：0
+
+检查：PostgreSQL 实际版本
+命令：docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c SELECT\ version\(\)\;
+                                         version
+------------------------------------------------------------------------------------------
+ PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+(1 row)
+
+退出码：0
+
+检查：通过宿主机 TCP 5432 和 .env 密码认证
+命令：docker run --rm --network host --env-file .env postgres:16-alpine sh -c PGPASSWORD=\"\$POSTGRES_PASSWORD\"\ psql\ -h\ 127.0.0.1\ -p\ \"\$DB_PORT\"\ -U\ \"\$POSTGRES_USER\"\ -d\ \"\$POSTGRES_DB\"\ -v\ ON_ERROR_STOP=1\ -c\ \"SELECT\ current_database\(\)\,\ current_user\;\"
+ current_database |   current_user
+------------------+------------------
+ market_dashboard | market_dashboard
+(1 row)
+
+退出码：0
+
+检查：写入临时持久化标记
+命令：docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c CREATE\ TABLE\ IF\ NOT\ EXISTS\ issue02_persistence_check\ \(id\ integer\ PRIMARY\ KEY\,\ marker\ text\ NOT\ NULL\)\;\ TRUNCATE\ issue02_persistence_check\;\ INSERT\ INTO\ issue02_persistence_check\ VALUES\ \(1\,\ \'survives-restart\'\)\;
+CREATE TABLE
+TRUNCATE TABLE
+INSERT 0 1
+退出码：0
+
+检查：重启 PostgreSQL
+命令：docker compose restart postgres
+ Container market_bashboard-postgres-1 Restarting
+ Container market_bashboard-postgres-1 Started
+退出码：0
+
+检查：重启后等待 healthy
+命令：docker compose up -d --wait --wait-timeout 90
+ Container market_bashboard-postgres-1 Running
+ Container market_bashboard-postgres-1 Waiting
+ Container market_bashboard-postgres-1 Healthy
+退出码：0
+
+检查：重启后查询同一标记
+命令：docker compose exec -T postgres psql -At -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c SELECT\ marker\ FROM\ issue02_persistence_check\ WHERE\ id\ =\ 1\;
+survives-restart
+退出码：0
+断言：重启后标记保留；实际=survives-restart；预期=survives-restart；退出码：0
+
+检查：移除本项目容器以验证命名卷（保留卷）
+命令：docker compose down
+ Container market_bashboard-postgres-1 Stopping
+ Container market_bashboard-postgres-1 Stopped
+ Container market_bashboard-postgres-1 Removing
+ Container market_bashboard-postgres-1 Removed
+ Network market_bashboard_default Removing
+ Network market_bashboard_default Removed
+退出码：0
+
+检查：重建前命名卷保留
+命令：docker volume inspect -f \{\{.Name\}\} market_dashboard_postgres_data
+market_dashboard_postgres_data
+退出码：0
+
+检查：重建容器并等待 healthy
+命令：docker compose up -d --wait --wait-timeout 90
+ Network market_bashboard_default Creating
+ Network market_bashboard_default Created
+ Container market_bashboard-postgres-1 Creating
+ Container market_bashboard-postgres-1 Created
+ Container market_bashboard-postgres-1 Starting
+ Container market_bashboard-postgres-1 Started
+ Container market_bashboard-postgres-1 Waiting
+ Container market_bashboard-postgres-1 Healthy
+退出码：0
+
+检查：取得重建容器 ID
+命令：docker compose ps -q postgres
+7dc0514aaff477fe693350eeac9ca6894904aa7de8181e3c446efdcc55e03281
+退出码：0
+断言：容器已重建；首次 ID=eb0752a006162f6c878ba88e11db4e10d5bb6a74d282667b40f9707e25485cd8；重建 ID=7dc0514aaff477fe693350eeac9ca6894904aa7de8181e3c446efdcc55e03281；退出码：0
+
+检查：重建后本项目容器健康状态
+命令：docker inspect -f \{\{.State.Health.Status\}\} 7dc0514aaff477fe693350eeac9ca6894904aa7de8181e3c446efdcc55e03281
+healthy
+退出码：0
+断言：重建后 healthy；实际=healthy；预期=healthy；退出码：0
+
+检查：重建后镜像与同一命名卷
+命令：docker inspect -f image=\{\{.Config.Image\}\}\ \{\{range\ .Mounts\}\}type=\{\{.Type\}\}\ name=\{\{.Name\}\}\ destination=\{\{.Destination\}\}\{\{end\}\} 7dc0514aaff477fe693350eeac9ca6894904aa7de8181e3c446efdcc55e03281
+image=postgres:16-alpine type=volume name=market_dashboard_postgres_data destination=/var/lib/postgresql/data
+退出码：0
+
+检查：重建后查询同一标记
+命令：docker compose exec -T postgres psql -At -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c SELECT\ marker\ FROM\ issue02_persistence_check\ WHERE\ id\ =\ 1\;
+survives-restart
+退出码：0
+断言：命名卷跨容器重建保留标记；实际=survives-restart；预期=survives-restart；退出码：0
+
+检查：删除临时验证表
+命令：docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c DROP\ TABLE\ issue02_persistence_check\;
+DROP TABLE
+退出码：0
+
+检查：确认临时验证表已删除
+命令：docker compose exec -T postgres psql -At -v ON_ERROR_STOP=1 -U market_dashboard -d market_dashboard -c SELECT\ to_regclass\(\'public.issue02_persistence_check\'\)\ IS\ NULL\;
+t
+退出码：0
+断言：测试表不存在；实际=t；预期=t；退出码：0
+
+清理与恢复（验证流程退出码：0）
+
+检查：停止本项目并保留命名卷
+命令：docker compose down
+ Container market_bashboard-postgres-1 Stopping
+ Container market_bashboard-postgres-1 Stopped
+ Container market_bashboard-postgres-1 Removing
+ Container market_bashboard-postgres-1 Removed
+ Network market_bashboard_default Removing
+ Network market_bashboard_default Removed
+退出码：0
+
+检查：最终本项目容器列表
+命令：docker compose ps -a
+NAME      IMAGE     COMMAND   SERVICE   CREATED   STATUS    PORTS
+退出码：0
+
+检查：最终命名卷仍存在
+命令：docker volume inspect -f \{\{.Name\}\} market_dashboard_postgres_data
+market_dashboard_postgres_data
+退出码：0
+
+检查：恢复原容器运行状态
+命令：docker start stock-market-postgres
+stock-market-postgres
+退出码：0
+
+检查：原容器最终状态
+命令：docker inspect -f id=\{\{.Id\}\}\ running=\{\{.State.Running\}\}\ status=\{\{.State.Status\}\}\ health=\{\{if\ .State.Health\}\}\{\{.State.Health.Status\}\}\{\{else\}\}none\{\{end\}\} stock-market-postgres
+id=5f60266222837e797fce4731275ac29e0232a81cb158b5d1f3016751c14ee62a running=true status=running health=healthy
+退出码：0
+
+检查：原容器运行状态恢复断言
+命令：docker inspect -f \{\{.State.Running\}\} stock-market-postgres
+true
+退出码：0
+断言：原容器运行状态保持原样；实际=true；预期=true；退出码：0
+
+检查：原容器 ID 未改变
+命令：docker inspect -f \{\{.Id\}\} stock-market-postgres
+5f60266222837e797fce4731275ac29e0232a81cb158b5d1f3016751c14ee62a
+退出码：0
+断言：原容器未删除或重建；实际=5f60266222837e797fce4731275ac29e0232a81cb158b5d1f3016751c14ee62a；预期=5f60266222837e797fce4731275ac29e0232a81cb158b5d1f3016751c14ee62a；退出码：0
+
+验证流程退出码：0
+清理恢复退出码：0
+结论：所有连接、健康和持久化检查通过；测试表已删除，本项目容器已移除、命名卷保留，原容器状态已恢复。
