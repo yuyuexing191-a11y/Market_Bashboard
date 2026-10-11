@@ -17,4 +17,4 @@ services:
 
 volumes:
   stock_dashboard_postgres_data:
-    name: market_bashboard_postgres_data
+    name: stock_dashboard_postgres_data
