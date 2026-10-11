@@ -29,6 +29,38 @@ def _minute_datetime(value: date | datetime | str, *, end: bool = False) -> str:
     return resolved.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _market_symbol(symbol: str) -> str:
+    return f"sh{symbol}" if symbol.startswith(("6", "9")) else f"sz{symbol}"
+
+
+def _rename_daily_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.rename(
+        columns={
+            "date": "日期",
+            "open": "开盘",
+            "close": "收盘",
+            "high": "最高",
+            "low": "最低",
+            "volume": "成交量",
+            "amount": "成交额",
+        }
+    )
+
+
+def _rename_minute_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    return frame.rename(
+        columns={
+            "day": "时间",
+            "open": "开盘",
+            "close": "收盘",
+            "high": "最高",
+            "low": "最低",
+            "volume": "成交量",
+            "amount": "成交额",
+        }
+    )
+
+
 class AkShareProvider:
     """Small boundary around the AkShare functions used by the importer."""
 
@@ -37,15 +69,19 @@ class AkShareProvider:
         client: Any | None = None,
         *,
         max_retries: int = 2,
+        timeout: float = 20,
         sleep_fn: Callable[[float], None] = sleep,
     ) -> None:
         if max_retries < 0:
             raise ValueError("max_retries 不能小于 0")
+        if timeout <= 0:
+            raise ValueError("timeout 必须大于 0")
         if client is None:
             import akshare as client
 
         self._client = client
         self._max_retries = max_retries
+        self._timeout = timeout
         self._sleep = sleep_fn
 
     def fetch_daily(
@@ -55,13 +91,14 @@ class AkShareProvider:
         end_date: date | datetime | str,
     ) -> pd.DataFrame:
         kwargs = {
-            "symbol": symbol,
-            "period": "daily",
+            "symbol": _market_symbol(symbol),
             "start_date": _daily_date(start_date),
             "end_date": _daily_date(end_date),
             "adjust": "",
+            "timeout": self._timeout,
         }
-        return self._call("日线", symbol, self._client.stock_zh_a_hist, kwargs)
+        frame = self._call("日线", symbol, self._client.stock_zh_a_hist_tx, kwargs)
+        return _rename_daily_columns(frame)
 
     def fetch_minute(
         self,
@@ -70,15 +107,18 @@ class AkShareProvider:
         end_datetime: date | datetime | str,
     ) -> pd.DataFrame:
         kwargs = {
-            "symbol": symbol,
-            "start_date": _minute_datetime(start_datetime),
-            "end_date": _minute_datetime(end_datetime, end=True),
+            "symbol": _market_symbol(symbol),
             "period": "1",
             "adjust": "",
         }
-        return self._call(
-            "分钟线", symbol, self._client.stock_zh_a_hist_min_em, kwargs
-        )
+        frame = self._call("分钟线", symbol, self._client.stock_zh_a_minute, kwargs)
+        frame = _rename_minute_columns(frame)
+        if frame.empty:
+            return frame
+        timestamps = pd.to_datetime(frame["时间"])
+        start = pd.Timestamp(_minute_datetime(start_datetime))
+        end = pd.Timestamp(_minute_datetime(end_datetime, end=True))
+        return frame.loc[(timestamps >= start) & (timestamps <= end)].reset_index(drop=True)
 
     def _call(
         self,

@@ -13,14 +13,14 @@ class FakeAkShare:
         self.daily_calls = []
         self.minute_calls = []
 
-    def stock_zh_a_hist(self, **kwargs):
+    def stock_zh_a_hist_tx(self, **kwargs):
         self.daily_calls.append(kwargs)
         result = self.daily_results.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
 
-    def stock_zh_a_hist_min_em(self, **kwargs):
+    def stock_zh_a_minute(self, **kwargs):
         self.minute_calls.append(kwargs)
         result = self.minute_results.pop(0)
         if isinstance(result, Exception):
@@ -37,11 +37,11 @@ def test_daily_provider_uses_unadjusted_akshare_history_arguments():
     assert result.empty
     assert fake.daily_calls == [
         {
-            "symbol": "000001",
-            "period": "daily",
+            "symbol": "sz000001",
             "start_date": "20240101",
             "end_date": "20240131",
             "adjust": "",
+            "timeout": 20,
         }
     ]
 
@@ -59,13 +59,35 @@ def test_minute_provider_uses_one_minute_unadjusted_history_arguments():
     assert result.empty
     assert fake.minute_calls == [
         {
-            "symbol": "600000",
-            "start_date": "2024-01-02 09:30:00",
-            "end_date": "2024-01-02 15:00:00",
+            "symbol": "sh600000",
             "period": "1",
             "adjust": "",
         }
     ]
+
+
+def test_provider_maps_tencent_and_sina_columns_to_normalizer_columns():
+    fake = FakeAkShare(
+        daily_results=[
+            pd.DataFrame(
+                [{"date": "2024-01-02", "open": 1, "close": 2, "high": 3, "low": 1, "volume": 4, "amount": 5}]
+            )
+        ],
+        minute_results=[
+            pd.DataFrame(
+                [{"day": "2024-01-02 09:30:00", "open": 1, "close": 2, "high": 3, "low": 1, "volume": 4, "amount": 5}]
+            )
+        ],
+    )
+    provider = AkShareProvider(client=fake, sleep_fn=lambda _: None)
+
+    daily = provider.fetch_daily("600000", date(2024, 1, 1), date(2024, 1, 3))
+    minute = provider.fetch_minute(
+        "600000", datetime(2024, 1, 2, 9, 0), datetime(2024, 1, 2, 10, 0)
+    )
+
+    assert set(["日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额"]).issubset(daily.columns)
+    assert set(["时间", "开盘", "收盘", "最高", "最低", "成交量", "成交额"]).issubset(minute.columns)
 
 
 def test_provider_retries_twice_then_returns_data():

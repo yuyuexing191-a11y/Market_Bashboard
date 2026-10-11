@@ -11,7 +11,7 @@
 ## 已确认的边界
 - 学习者：个人从零完成项目；前端 Issue，在对话中内部解释 React、TypeScript、Vite 和 ECharts 概念。
 - 市场：A 股；股票池约 20 只，覆盖金融、消费、制造、医药、科技等行业，并固定在项目配置中。
-- 数据源：使用 Python AkShare 获取行情；不依赖 Tushare Token，不把备用数据源纳入本期实现。
+- 数据源：使用 Python AkShare 获取行情；日线使用腾讯接口、分钟线使用新浪接口；不依赖 Tushare Token。
 - 导入范围：固定 20 只股票的指定日期范围日线，以及最近一个交易日的分钟线。
 - 分钟数据：只按实际存在的行情记录计算，不把休市、午休、停牌或缺失记录补成零价格。
 - 后端：FastAPI + PostgreSQL；前端：React + TypeScript + Vite + Apache ECharts。
